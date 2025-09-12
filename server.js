@@ -7,6 +7,7 @@ const app = express();
 app.use(cookieParser());
 
 // --- CONFIG ---
+// Load from environment variables
 const cfg = {
   spotify: {
     auth: "https://accounts.spotify.com/authorize",
@@ -26,7 +27,7 @@ const cfg = {
   }
 };
 
-// in-memory for demo; use Redis/DB in prod
+// In-memory for demo; use Redis/DB in prod
 const txns = new Map();
 
 // Start OAuth
@@ -38,6 +39,7 @@ app.get("/oauth/start", (req, res) => {
   const state = crypto.randomBytes(16).toString("hex");
   txns.set(state, { redirect });
 
+  let authUrl;
   if (provider === "spotify") {
     const u = new URL(cfg.spotify.auth);
     u.searchParams.set("response_type", "code");
@@ -45,8 +47,8 @@ app.get("/oauth/start", (req, res) => {
     u.searchParams.set("redirect_uri", cfg.spotify.redirectUri);
     u.searchParams.set("scope", cfg.spotify.scope);
     u.searchParams.set("state", state);
-    return res.redirect(u.toString());
-  } else {
+    authUrl = u.toString();
+  } else { // provider === "google"
     const u = new URL(cfg.google.auth);
     u.searchParams.set("response_type", "code");
     u.searchParams.set("client_id", cfg.google.clientId);
@@ -55,8 +57,9 @@ app.get("/oauth/start", (req, res) => {
     u.searchParams.set("access_type", "offline");
     u.searchParams.set("prompt", "consent");
     u.searchParams.set("state", state);
-    return res.redirect(u.toString());
+    authUrl = u.toString();
   }
+  return res.redirect(authUrl);
 });
 
 // Token exchange helpers
@@ -75,7 +78,12 @@ async function exchangeSpotify(code) {
       redirect_uri: cfg.spotify.redirectUri
     })
   });
-  return r.json();
+  const data = await r.json();
+  if (!r.ok) {
+    console.error("Spotify token exchange failed:", r.status, data);
+    return { error: data.error_description || data.error || 'Failed to exchange token with Spotify' };
+  }
+  return data;
 }
 
 async function exchangeGoogle(code) {
@@ -90,31 +98,98 @@ async function exchangeGoogle(code) {
       redirect_uri: cfg.google.redirectUri
     })
   });
-  return r.json();
+   const data = await r.json();
+   if (!r.ok) {
+    console.error("Google token exchange failed:", r.status, data);
+    return { error: data.error_description || data.error || 'Failed to exchange token with Google' };
+  }
+  return data;
 }
 
-function finish(res, state, tokens) {
-  const txn = txns.get(state);
-  if (!txn) return res.status(400).send("bad state");
-  txns.delete(state);
-  // TODO: persist tokens securely for the logged-in user
-  const url = new URL(txn.redirect);
-  url.searchParams.set("ok", "1");
-  res.redirect(url.toString());
+// Respond with a page that posts a message to the opener window and closes itself.
+function finish(res, state, data, provider, isError = false) {
+    const txn = txns.get(state);
+    if (!txn) {
+        return res.status(400).send(`
+            <html><body>
+                <h2>Error</h2>
+                <p>Invalid state parameter. This may be a sign of a CSRF attack. Please close this window and try again.</p>
+            </body></html>
+        `);
+    }
+    txns.delete(state);
+
+    const result = { provider };
+    if (isError) {
+        result.error = data.error || 'An unknown error occurred.';
+    } else {
+        result.token = data.access_token;
+    }
+    
+    // The targetOrigin should be the URL of the frontend that initiated the request
+    const targetOrigin = new URL(txn.redirect).origin;
+
+    const script = `
+        <script>
+            if (window.opener) {
+                window.opener.postMessage(${JSON.stringify(result)}, '${targetOrigin}');
+            }
+            window.close();
+        </script>
+    `;
+
+    const message = isError ? `Authentication failed: ${result.error}` : 'Authentication successful!';
+    
+    res.send(`
+        <html>
+            <head><title>Authentication Complete</title></head>
+            <body>
+                <p>${message} You can close this window now.</p>
+                ${script}
+            </body>
+        </html>
+    `);
 }
+
 
 // Callbacks
 app.get("/callback/spotify", async (req, res) => {
-  const { code, state } = req.query;
+  const { code, state, error } = req.query;
+  if (!state) return res.status(400).send("Missing state from Spotify callback.");
+  
+  if (error) {
+    console.error("Spotify returned an error:", error);
+    return finish(res, state, { error }, 'spotify', true);
+  }
+  if (!code) return finish(res, state, { error: 'Missing code from Spotify callback.' }, 'spotify', true);
+
   const tokens = await exchangeSpotify(code);
-  return finish(res, state, tokens);
+  if (tokens.error || !tokens.access_token) {
+    return finish(res, state, { error: tokens.error }, 'spotify', true);
+  }
+  return finish(res, state, tokens, 'spotify');
 });
 
 app.get("/callback/google", async (req, res) => {
-  const { code, state } = req.query;
+  const { code, state, error } = req.query;
+  if (!state) return res.status(400).send("Missing state from Google callback.");
+  
+  if (error) {
+    console.error("Google returned an error:", error);
+    return finish(res, state, { error }, 'google', true);
+  }
+  if (!code) return finish(res, state, { error: 'Missing code from Google callback.' }, 'google', true);
+
   const tokens = await exchangeGoogle(code);
-  return finish(res, state, tokens);
+  if (tokens.error || !tokens.access_token) {
+    return finish(res, state, { error: tokens.error }, 'google', true);
+  }
+  return finish(res, state, tokens, 'google');
 });
 
 app.get("/", (_req, res) => res.send("OK"));
-app.listen(process.env.PORT || 8080);
+
+const port = process.env.PORT || 8080;
+app.listen(port, () => {
+  console.log(`Auth server listening on port ${port}`);
+});
