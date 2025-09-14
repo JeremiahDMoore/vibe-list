@@ -47,6 +47,7 @@ app.get("/oauth/start", (req, res) => {
     u.searchParams.set("redirect_uri", cfg.spotify.redirectUri);
     u.searchParams.set("scope", cfg.spotify.scope);
     u.searchParams.set("state", state);
+    u.searchParams.set("show_dialog", "true");
     authUrl = u.toString();
   } else { // provider === "google"
     const u = new URL(cfg.google.auth);
@@ -189,7 +190,11 @@ app.get("/callback/google", async (req, res) => {
 
 app.get("/", (_req, res) => res.send("OK"));
 
-const port = process.env.PORT || 8080;
-app.listen(port, () => {
+const port = process.env.PORT || 10000;
+const server = app.listen(port, "0.0.0.0", () => {
   console.log(`Auth server listening on port ${port}`);
 });
+
+// Increase timeouts to prevent intermittent 502s on some platforms
+server.keepAliveTimeout = 120 * 1000;
+server.headersTimeout = 120 * 1000;
