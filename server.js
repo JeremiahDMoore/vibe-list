@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/genai";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import express from "express";
@@ -30,7 +30,7 @@ import fetch from "node-fetch";
 
   // --- Gemini AI Config ---
   const geminiApiKey = process.env.GEMINI_API_KEY;
-  const ai = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
+  const ai = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
   if (!ai) {
       console.warn("Gemini API key not configured. AI features will be disabled.");
   } else {
