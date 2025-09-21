@@ -66,7 +66,9 @@ import fetch from "node-fetch";
   the prompt itself.`;
 
           const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-          const result = await model.generateContent([{ parts: [imagePart, { text: prompt }] }]);
+          const result = await model.generateContent({
+              contents: [{ parts: [imagePart, { text: prompt }] }]
+          });
           const response = result.response;
           const generatedText = response.text();
 
