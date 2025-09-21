@@ -61,7 +61,7 @@ import fetch from "node-fetch";
 
           const styleText = stylePrompts.length > 0 ?  ` Incorporate these styles: ${stylePrompts.join('; ')}.` : '';
 
-          const prompt = `Analyze this photo of a person's face and their described mood: "${mood}". Based on this, create a detailed, artistic, and visually rich prompt for an AI image generator to create a stunning album
+          const prompt = `Analyze this photo "${mood}". Based on this, create a detailed, artistic, and visually rich prompt for an AI image generator to create a stunning album
   cover. The prompt should be a single paragraph that captures the photo's essence and the specified mood, ready to be fed directly into an image generation model.${styleText} Do not include any conversational text, just
   the prompt itself.`;
 
