@@ -1,8 +1,8 @@
+import { GoogleGenAI } from "@google/genai";
+import cookieParser from "cookie-parser";
+import crypto from "crypto";
 import express from "express";
-  import fetch from "node-fetch";
-  import cookieParser from "cookie-parser";
-  import crypto from "crypto";
-  import { GoogleGenAI } from "@google/genai";
+import fetch from "node-fetch";
 
   const app = express();
   app.use(cookieParser());
@@ -63,7 +63,9 @@ import express from "express";
   the prompt itself.`;
 
           const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-          const result = await model.generateContent([prompt, imagePart]);
+          const result = await model.generateContent({
+              contents: [{ parts: [imagePart, { text: prompt }] }]
+          });
           const response = result.response;
           const generatedText = response.text();
 
@@ -325,3 +327,19 @@ import express from "express";
   // Increase timeouts to prevent intermittent 502s on some platforms
   server.keepAliveTimeout = 120 * 1000;
   server.headersTimeout = 120 * 1000;
+
+
+
+  // PACKAGE.JSON DEPENDENCIES:
+//   {
+//   "name": "auth-server",
+//   "private": true,
+//   "type": "module",
+//   "scripts": { "start": "node server.js" },
+//   "dependencies": {
+//     "@google/genai": "^1.19.0",
+//     "cookie-parser": "^1.4.6",
+//     "express": "^4.19.2",
+//     "node-fetch": "^3.3.2"
+//   }
+// }
