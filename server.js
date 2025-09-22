@@ -30,12 +30,11 @@ import fetch from "node-fetch";
 
   // --- Gemini AI Config ---
   const geminiApiKey = process.env.GEMINI_API_KEY;
-  const ai = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
-  if (!ai) {
+  const genAI = geminiApiKey ? new GoogleGenAI(geminiApiKey) : null;
+  if (!genAI) {
       console.warn("Gemini API key not configured. AI features will be disabled.");
   } else {
-      console.log("GoogleGenAI initialized. Available methods:", Object.getOwnPropertyNames(ai));
-      console.log("AI object:", ai);
+      console.log("GoogleGenAI initialized.");
   }
 
   // In-memory for demo; use Redis/DB in prod
@@ -44,7 +43,7 @@ import fetch from "node-fetch";
   // --- Gemini AI Endpoints ---
 
   app.post("/generate-album-cover-prompt", async (req, res) => {
-      if (!ai) return res.status(503).send({ error: "AI service not configured." });
+      if (!genAI) return res.status(503).send({ error: "AI service not configured." });
 
       const { imageData, imageMimeType, mood, styles } = req.body;
       if (!imageData || !imageMimeType || !mood || !styles) {
@@ -52,6 +51,7 @@ import fetch from "node-fetch";
       }
 
       try {
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           const imagePart = { inlineData: { data: imageData, mimeType: imageMimeType } };
 
           const stylePrompts = [];
@@ -65,10 +65,7 @@ import fetch from "node-fetch";
   cover. The prompt should be a single paragraph that captures the photo's essence and the specified mood, ready to be fed directly into an image generation model.${styleText} Do not include any conversational text, just
   the prompt itself.`;
 
-          const result = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: [{ parts: [imagePart, { text: prompt }] }]
-          });
+          const result = await model.generateContent([prompt, imagePart]);
           const response = result.response;
           const generatedText = response.text();
 
@@ -83,7 +80,7 @@ import fetch from "node-fetch";
   });
 
   app.post("/edit-selfie-into-album-cover", async (req, res) => {
-      if (!ai) return res.status(503).send({ error: "AI service not configured." });
+      if (!genAI) return res.status(503).send({ error: "AI service not configured." });
 
       const { imageData, imageMimeType, prompt } = req.body;
       if (!imageData || !imageMimeType || !prompt) {
@@ -91,19 +88,12 @@ import fetch from "node-fetch";
       }
 
       try {
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           const imagePart = { inlineData: { data: imageData, mimeType: imageMimeType } };
-          const textPart = {
-              text: `Transform this user's photo into a complete album cover based on the following artistic direction: "${prompt}". The final image should be a fully realized piece of art, with a square 1:1 aspect ratio,
-  emulating famous album covers. The user's face must be clearly visible and integrated naturally into the artwork.`,
-          };
+          const textPart = `Transform this user's photo into a complete album cover based on the following artistic direction: "${prompt}". The final image should be a fully realized piece of art, with a square 1:1 aspect ratio,
+  emulating famous album covers. The user's face must be clearly visible and integrated naturally into the artwork.`;
 
-          const result = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: [{ parts: [imagePart, textPart] }],
-              generationConfig: {
-                  responseMimeType: "image/png",
-              }
-          });
+          const result = await model.generateContent([textPart, imagePart]);
 
           const response = result.response;
           const candidate = response?.candidates?.[0];
@@ -129,7 +119,7 @@ import fetch from "node-fetch";
   });
 
   app.post("/generate-playlist-vibe", async (req, res) => {
-      if (!ai) return res.status(503).send({ error: "AI service not configured." });
+      if (!genAI) return res.status(503).send({ error: "AI service not configured." });
 
       const { mood, albumPrompt, playlistLength } = req.body;
       if (!mood || !albumPrompt || !playlistLength) {
@@ -137,16 +127,11 @@ import fetch from "node-fetch";
       }
 
       try {
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           const prompt = `Based on a user's mood of "${mood}" and an album cover described as "${albumPrompt}", create a 'playlist vibe'. Return a valid JSON object with three keys: "vibe" (a 1-2 sentence description of the
    overall mood), "genre" (a primary genre), and "songs" (an array of exactly ${playlistLength} objects, each with "title" and "artist").`;
 
-          const result = await ai.models.generateContent({
-              model: "gemini-2.5-flash",
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                  responseMimeType: "application/json",
-              },
-          });
+          const result = await model.generateContent(prompt);
 
           const response = result.response;
           const generatedText = response.text();
