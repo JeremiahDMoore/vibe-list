@@ -155,4 +155,167 @@ app.post("/generate-playlist-vibe", async (req, res) => {
           Mood: "${mood}". Album cover: "${albumPrompt}".`,
         },
       ],
-      // Ask for JSON output and be ready to parse/defence if fencing o
+      // Ask for JSON output and be ready to parse/defence if fencing occurs.
+      config: { responseMimeType: "application/json" },
+    });
+
+    let jsonText = resp.text?.trim() || "";
+    // strip ``` fences if present
+    const m = jsonText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    if (m) jsonText = m[1].trim();
+
+    let data;
+    try {
+      data = JSON.parse(jsonText);
+    } catch {
+      // fallback: tell the client it failed in a controlled way
+      return res.status(502).json({ error: "Model did not return valid JSON." });
+    }
+    return res.json(data);
+  } catch (err) {
+    console.error("Error generating playlist vibe:", err);
+    return res.status(500).json({ error: "Error generating playlist vibe." });
+  }
+});
+
+// --------- OAuth ---------
+
+app.get("/oauth/start", (req, res) => {
+  const { provider, redirect } = req.query;
+  if (!["spotify", "google"].includes(provider)) return res.status(400).send("bad provider");
+  if (!redirect || !/^https?:\/\/.+/i.test(redirect)) return res.status(400).send("bad redirect");
+
+  const state = crypto.randomBytes(16).toString("hex");
+  txns.set(state, { redirect });
+
+  let authUrl;
+  if (provider === "spotify") {
+    const u = new URL(cfg.spotify.auth);
+    u.searchParams.set("response_type", "code");
+    u.searchParams.set("client_id", cfg.spotify.clientId);
+    u.searchParams.set("redirect_uri", cfg.spotify.redirectUri);
+    u.searchParams.set("scope", cfg.spotify.scope);
+    u.searchParams.set("state", state);
+    u.searchParams.set("show_dialog", "true");
+    authUrl = u.toString();
+  } else {
+    const u = new URL(cfg.google.auth);
+    u.searchParams.set("response_type", "code");
+    u.searchParams.set("client_id", cfg.google.clientId);
+    u.searchParams.set("redirect_uri", cfg.google.redirectUri);
+    u.searchParams.set("scope", cfg.google.scope);
+    u.searchParams.set("access_type", "offline");
+    u.searchParams.set("prompt", "consent");
+    u.searchParams.set("state", state);
+    authUrl = u.toString();
+  }
+  return res.redirect(authUrl);
+});
+
+async function exchangeSpotify(code) {
+  const r = await fetch(cfg.spotify.token, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization:
+        "Basic " + Buffer.from(`${cfg.spotify.clientId}:${cfg.spotify.clientSecret}`).toString("base64"),
+    },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: cfg.spotify.redirectUri,
+    }),
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    console.error("Spotify token exchange failed:", r.status, data);
+    return { error: data.error_description || data.error || "Failed to exchange token with Spotify" };
+  }
+  return data; // includes access_token, refresh_token (if granted)
+}
+
+async function exchangeGoogle(code) {
+  const r = await fetch(cfg.google.token, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      client_id: cfg.google.clientId,
+      client_secret: cfg.google.clientSecret,
+      redirect_uri: cfg.google.redirectUri,
+    }),
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    console.error("Google token exchange failed:", r.status, data);
+    return { error: data.error_description || data.error || "Failed to exchange token with Google" };
+  }
+  return data;
+}
+
+function finish(res, state, data, provider, isError = false) {
+  const txn = txns.get(state);
+  if (!txn) {
+    return res.status(400).send(`
+      <html><body>
+        <h2>Error</h2>
+        <p>Invalid state parameter. Close this window and try again.</p>
+      </body></html>
+    `);
+  }
+  txns.delete(state);
+
+  const targetOrigin = new URL(txn.redirect).origin;
+  const result = isError ? { provider, error: data.error || "Unknown error." } : { provider, token: data.access_token };
+
+  res.send(`
+    <html>
+      <head><title>Authentication Complete</title></head>
+      <body>
+        <p>${isError ? `Authentication failed: ${result.error}` : "Authentication successful!"}</p>
+        <script>
+          try {
+            if (window.opener) {
+              window.opener.postMessage(${JSON.stringify(result)}, '${targetOrigin}');
+            }
+          } finally { window.close(); }
+        </script>
+      </body>
+    </html>
+  `);
+}
+
+// Callbacks
+app.get("/callback/spotify", async (req, res) => {
+  const { code, state, error } = req.query;
+  if (!state) return res.status(400).send("Missing state from Spotify callback.");
+  if (error) return finish(res, state, { error }, "spotify", true);
+  if (!code) return finish(res, state, { error: "Missing code from Spotify callback." }, "spotify", true);
+
+  const tokens = await exchangeSpotify(code);
+  if (tokens.error || !tokens.access_token) return finish(res, state, { error: tokens.error }, "spotify", true);
+  return finish(res, state, tokens, "spotify");
+});
+
+app.get("/callback/google", async (req, res) => {
+  const { code, state, error } = req.query;
+  if (!state) return res.status(400).send("Missing state from Google callback.");
+  if (error) return finish(res, state, { error }, "google", true);
+  if (!code) return finish(res, state, { error: "Missing code from Google callback." }, "google", true);
+
+  const tokens = await exchangeGoogle(code);
+  if (tokens.error || !tokens.access_token) return finish(res, state, { error: tokens.error }, "google", true);
+  return finish(res, state, tokens, "google");
+});
+
+app.get("/", (_req, res) => res.send("OK"));
+
+const port = process.env.PORT || 10000;
+const server = app.listen(port, "0.0.0.0", () => {
+  console.log(`Auth server listening on port ${port}`);
+});
+
+// Longer timeouts for some hosts (e.g., Render)
+server.keepAliveTimeout = 120 * 1000;
+server.headersTimeout = 120 * 1000;
