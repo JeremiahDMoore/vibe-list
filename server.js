@@ -51,7 +51,7 @@ import fetch from "node-fetch";
       }
 
       try {
-          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
           const imagePart = { inlineData: { data: imageData, mimeType: imageMimeType } };
 
           const stylePrompts = [];
@@ -88,7 +88,7 @@ import fetch from "node-fetch";
       }
 
       try {
-          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
           const imagePart = { inlineData: { data: imageData, mimeType: imageMimeType } };
           const textPart = `Transform this user's photo into a complete album cover based on the following artistic direction: "${prompt}". The final image should be a fully realized piece of art, with a square 1:1 aspect ratio,
   emulating famous album covers. The user's face must be clearly visible and integrated naturally into the artwork.`;
@@ -127,7 +127,7 @@ import fetch from "node-fetch";
       }
 
       try {
-          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
           const prompt = `Based on a user's mood of "${mood}" and an album cover described as "${albumPrompt}", create a 'playlist vibe'. Return a valid JSON object with three keys: "vibe" (a 1-2 sentence description of the
    overall mood), "genre" (a primary genre), and "songs" (an array of exactly ${playlistLength} objects, each with "title" and "artist").`;
 
