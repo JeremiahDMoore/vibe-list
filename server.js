@@ -65,8 +65,8 @@ import fetch from "node-fetch";
   cover. The prompt should be a single paragraph that captures the photo's essence and the specified mood, ready to be fed directly into an image generation model.${styleText} Do not include any conversational text, just
   the prompt itself.`;
 
-          const result = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+          const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+          const result = await model.generateContent({
               contents: [{ parts: [imagePart, { text: prompt }] }]
           });
           const response = result.response;
@@ -97,8 +97,8 @@ import fetch from "node-fetch";
   emulating famous album covers. The user's face must be clearly visible and integrated naturally into the artwork.`,
           };
 
-          const result = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+          const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+          const result = await model.generateContent({
               contents: [{ parts: [imagePart, textPart] }],
               generationConfig: {
                   responseMimeType: "image/png",
@@ -140,8 +140,8 @@ import fetch from "node-fetch";
           const prompt = `Based on a user's mood of "${mood}" and an album cover described as "${albumPrompt}", create a 'playlist vibe'. Return a valid JSON object with three keys: "vibe" (a 1-2 sentence description of the
    overall mood), "genre" (a primary genre), and "songs" (an array of exactly ${playlistLength} objects, each with "title" and "artist").`;
 
-          const result = await ai.models.generateContent({
-              model: "gemini-2.5-flash",
+          const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+          const result = await model.generateContent({
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: {
                   responseMimeType: "application/json",
